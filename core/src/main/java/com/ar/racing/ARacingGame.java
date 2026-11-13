@@ -77,7 +77,7 @@ public class ARacingGame extends ApplicationAdapter {
         Material body=new Material(PBRColorAttribute.createBaseColorFactor(color));
         mb.part("body",GL20.GL_TRIANGLES,ATTR,body).box(2f,0.8f,4f);
         Material glass=new Material(PBRColorAttribute.createBaseColorFactor(new Color(0.05f,0.08f,0.12f,1)));
-        mb.part("cabin",GL20.GL_TRIANGLES,ATTR,glass).box(1.45f,0.65f,1.8f).setTranslation(0,0.68f,-0.25f);
+        mb.part("cabin",GL20.GL_TRIANGLES,ATTR,glass).box(1.45f,0.65f,1.8f);
         return mb.end();
     }
 
