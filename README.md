@@ -1,17 +1,33 @@
 # AR RACING
 
-A 3D Android racing game built with Java and libGDX.
+Android 3D racing game built with Java, libGDX and gdx-gltf PBR rendering.
 
-## Build APK in GitHub Actions
+## Build APK with GitHub Actions
 
-1. Push changes to the `main` branch, or run the workflow manually from the Actions tab.
-2. Open the **Build AR RACING APK** workflow run.
-3. When it succeeds, download the `AR-RACING-debug-apk` artifact.
-4. Extract the ZIP file to get `app-debug.apk`.
+1. Push to `main` (or `master`), or open **Actions** and run **Build AR RACING APK** manually.
+2. Open the completed workflow run.
+3. Download the `AR-RACING-debug-apk` artifact ZIP and extract `app-debug.apk`.
 
-## Project modules
+## Controls
 
-- `core`: shared libGDX game code.
-- `android`: Android launcher and APK configuration.
+- Touch the lower-right half of the screen to accelerate.
+- Touch the lower-left half to brake.
+- Touch the upper-left / upper-right halves to steer.
 
-The project uses libGDX 1.14.2 and Java 17 for the cloud build.
+## 3D models
+
+The game runs with built-in procedural placeholder track and cars. To use custom GLB models, add these files under `android/src/main/assets/models/`:
+
+- `track.glb`
+- `blue_car.glb`
+- `yellow_car.glb`
+- `red_car.glb`
+
+If a GLB file is missing or cannot be loaded, the game uses its built-in fallback model.
+
+## Technology
+
+- Java 17
+- Android Gradle Plugin 8.10.1
+- libGDX 1.14.2
+- gdx-gltf 2.3.0 (JitPack)
