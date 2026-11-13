@@ -2,261 +2,135 @@ package com.ar.racing;
 
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
-import com.badlogic.gdx.InputAdapter;
+import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
-import com.badlogic.gdx.graphics.VertexAttributes;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g3d.Environment;
-import com.badlogic.gdx.graphics.g3d.ModelBatch;
-import com.badlogic.gdx.graphics.g3d.Model;
-import com.badlogic.gdx.graphics.g3d.ModelInstance;
-import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
-import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
-import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
-import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector3;
+import net.mgsx.gltf.loaders.glb.GLBLoader;
+import net.mgsx.gltf.scene3d.attributes.PBRFloatAttribute;
+import net.mgsx.gltf.scene3d.lights.DirectionalShadowLight;
+import net.mgsx.gltf.scene3d.scene.Scene;
+import net.mgsx.gltf.scene3d.scene.SceneAsset;
+import net.mgsx.gltf.scene3d.scene.SceneManager;
+import net.mgsx.gltf.scene3d.shaders.PBRShaderConfig;
+import net.mgsx.gltf.scene3d.shaders.PBRShaderProvider;
+import net.mgsx.gltf.scene3d.shaders.PBRDepthShaderProvider;
 
 public class ARacingGame extends ApplicationAdapter {
-
-    private ModelBatch batch;
-    private ModelBuilder builder;
-    private Environment environment;
+    private SceneManager renderer;
     private PerspectiveCamera camera;
+    private SceneAsset trackAsset, playerAsset, yellowAsset, redAsset;
+    private Scene track, player;
+    private final Scene[] bots = new Scene[4];
+    private DirectionalShadowLight shadowLight;
+    private final Vector3 playerPosition = new Vector3();
+    private final Vector3 cameraTarget = new Vector3();
+    private final Vector3 cameraPosition = new Vector3();
+    private float speed, steering, playerRotation, botTime;
+    private static final float MAX_SPEED = 32f, ACCELERATION = 12f, BRAKE_POWER = 20f;
+    private static final float BOT_RADIUS_X = 30f, BOT_RADIUS_Z = 18f;
 
-    private Model roadModel;
-    private Model groundModel;
-    private final Model[] carModels = new Model[5];
-    private ModelInstance road;
-    private ModelInstance ground;
-    private final ModelInstance[] cars = new ModelInstance[5];
+    @Override public void create() {
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glEnable(GL20.GL_CULL_FACE);
+        PBRShaderConfig colorConfig = PBRShaderProvider.createDefaultConfig();
+        colorConfig.numDirectionalLights = 1;
+        colorConfig.numPointLights = 0;
+        colorConfig.numSpotLights = 0;
+        com.badlogic.gdx.graphics.g3d.shaders.DepthShader.Config depthConfig =
+                PBRShaderProvider.createDefaultDepthConfig();
+        renderer = new SceneManager(new PBRShaderProvider(colorConfig),
+                new PBRDepthShaderProvider(depthConfig));
+        renderer.setAmbientLight(0.35f);
+        shadowLight = new DirectionalShadowLight(2048, 2048, 90f, 90f, 1f, 180f);
+        shadowLight.set(Color.WHITE, new Vector3(-1f, -4f, -2f), 3.5f);
+        renderer.environment.add(shadowLight);
+        renderer.environment.set(new PBRFloatAttribute(PBRFloatAttribute.ShadowBias, 1f / 256f));
 
-    private final float[] positions = new float[5];
-    private final float[] progress = new float[5];
-    private final float[] botSpeed = {0, 18, 16, 20, 17};
+        camera = new PerspectiveCamera(67f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
+        camera.near = 0.1f; camera.far = 250f;
+        camera.position.set(0f, 8f, -12f);
+        camera.lookAt(0f, 0f, 0f); camera.up.set(Vector3.Y); camera.update();
+        renderer.setCamera(camera);
 
-    private float playerSpeed = 0;
-    private int playerLane = 1;
-
-    private boolean leftPressed;
-    private boolean rightPressed;
-    private boolean finished = false;
-
-    private static final float ROAD_WIDTH = 12f;
-    private static final float FINISH_DISTANCE = 1200f;
-
-    private BitmapFont font;
-    private SpriteBatch ui;
-
-    @Override
-    public void create() {
-        batch = new ModelBatch();
-        builder = new ModelBuilder();
-        ui = new SpriteBatch();
-        font = new BitmapFont();
-
-        camera = new PerspectiveCamera(
-            67,
-            Gdx.graphics.getWidth(),
-            Gdx.graphics.getHeight()
-        );
-        camera.near = 0.1f;
-        camera.far = 2500f;
-
-        environment = new Environment();
-        environment.set(new ColorAttribute(
-            ColorAttribute.AmbientLight,
-            0.85f, 0.85f, 0.85f, 1f
-        ));
-        environment.add(new DirectionalLight().set(
-            1f, 1f, 1f, -0.5f, -1f, -0.5f
-        ));
-
-        roadModel = box(ROAD_WIDTH, 0.2f, 1600f, Color.DARK_GRAY);
-        road = new ModelInstance(roadModel);
-        road.transform.setToTranslation(0f, 0f, -790f);
-
-        groundModel = box(
-            300f, 0.1f, 1800f,
-            new Color(0.12f, 0.38f, 0.12f, 1f)
-        );
-        ground = new ModelInstance(groundModel);
-        ground.transform.setToTranslation(0f, -0.2f, -790f);
-
-        Color[] colors = {
-            Color.RED, Color.BLUE, Color.YELLOW, Color.GREEN, Color.ORANGE
-        };
-
-        for (int i = 0; i < 5; i++) {
-            carModels[i] = box(1.7f, 0.8f, 3.2f, colors[i]);
-            cars[i] = new ModelInstance(carModels[i]);
+        GLBLoader loader = new GLBLoader();
+        trackAsset = loader.load(Gdx.files.internal("models/track.glb"));
+        playerAsset = loader.load(Gdx.files.internal("models/blue_car.glb"));
+        yellowAsset = loader.load(Gdx.files.internal("models/yellow_car.glb"));
+        redAsset = loader.load(Gdx.files.internal("models/red_car.glb"));
+        track = new Scene(trackAsset.scene);
+        player = new Scene(playerAsset.scene);
+        renderer.addScene(track); renderer.addScene(player);
+        player.modelInstance.transform.setToTranslation(playerPosition);
+        for (int i = 0; i < bots.length; i++) {
+            bots[i] = new Scene((i < 2 ? yellowAsset : redAsset).scene);
+            renderer.addScene(bots[i]);
         }
-
-        positions[0] = 0f;
-        positions[1] = -3f;
-        positions[2] = 3f;
-        positions[3] = -3f;
-        positions[4] = 3f;
-
-        progress[0] = 0f;
-        progress[1] = -12f;
-        progress[2] = -25f;
-        progress[3] = -40f;
-        progress[4] = -55f;
-
-        Gdx.input.setInputProcessor(new InputAdapter() {
-            @Override
-            public boolean touchDown(int x, int y, int pointer, int button) {
-                float width = Gdx.graphics.getWidth();
-                if (x < width / 2f) {
-                    leftPressed = true;
-                } else {
-                    rightPressed = true;
-                }
-                return true;
-            }
-
-            @Override
-            public boolean touchUp(int x, int y, int pointer, int button) {
-                leftPressed = false;
-                rightPressed = false;
-                return true;
-            }
-        });
+        updateBots(0f);
     }
 
-    private Model box(float width, float height, float depth, Color color) {
-        return builder.createBox(
-            width, height, depth,
-            new Material(ColorAttribute.createDiffuse(color)),
-            VertexAttributes.Usage.Position | VertexAttributes.Usage.Normal
-        );
+    private void updatePlayer(float delta) {
+        boolean accelerating = Gdx.input.isKeyPressed(Input.Keys.UP);
+        boolean braking = Gdx.input.isKeyPressed(Input.Keys.DOWN);
+        boolean left = Gdx.input.isKeyPressed(Input.Keys.LEFT);
+        boolean right = Gdx.input.isKeyPressed(Input.Keys.RIGHT);
+        if (accelerating) speed += ACCELERATION * delta; else speed -= 3f * delta;
+        if (braking) speed -= BRAKE_POWER * delta;
+        speed = MathUtils.clamp(speed, 0f, MAX_SPEED);
+        steering = left ? 1f : (right ? -1f : 0f);
+        playerRotation += steering * delta * 1.8f * (speed / MAX_SPEED);
+        playerPosition.x += MathUtils.sin(playerRotation) * speed * delta;
+        playerPosition.z += MathUtils.cos(playerRotation) * speed * delta;
+        player.modelInstance.transform.setToTranslation(playerPosition);
+        player.modelInstance.transform.rotate(Vector3.Y, playerRotation * MathUtils.radiansToDegrees);
     }
 
-    @Override
-    public void resize(int width, int height) {
-        if (height <= 0) return;
-        camera.viewportWidth = width;
-        camera.viewportHeight = height;
-        camera.update();
-        ui.getProjectionMatrix().setToOrtho2D(0f, 0f, width, height);
+    private void updateBots(float delta) {
+        botTime += delta;
+        for (int i = 0; i < bots.length; i++) {
+            float angle = botTime * 0.18f + i * MathUtils.PI / 2f;
+            float x = MathUtils.cos(angle) * BOT_RADIUS_X;
+            float z = MathUtils.sin(angle) * BOT_RADIUS_Z;
+            bots[i].modelInstance.transform.idt();
+            bots[i].modelInstance.transform.setToTranslation(x, 0f, z);
+            bots[i].modelInstance.transform.rotate(Vector3.Y, -angle * MathUtils.radiansToDegrees);
+        }
     }
 
-    @Override
-    public void render() {
-        float delta = Math.min(Gdx.graphics.getDeltaTime(), 0.033f);
-        updateGame(delta);
+    private void updateCamera(float delta) {
+        float behind = 11f, height = 5f, radians = playerRotation;
+        cameraTarget.set(playerPosition.x, playerPosition.y + 1f, playerPosition.z);
+        cameraPosition.set(playerPosition.x - MathUtils.sin(radians) * behind,
+                playerPosition.y + height, playerPosition.z - MathUtils.cos(radians) * behind);
+        camera.position.lerp(cameraPosition, Math.min(1f, delta * 5f));
+        camera.lookAt(cameraTarget); camera.up.set(Vector3.Y); camera.update();
+    }
 
+    private void updateDynamicShadows() {
+        shadowLight.setCenter(playerPosition.x, playerPosition.y, playerPosition.z);
+    }
+
+    @Override public void render() {
+        float delta = Math.min(Gdx.graphics.getDeltaTime(), 1f / 30f);
+        updatePlayer(delta); updateBots(delta); updateCamera(delta); updateDynamicShadows();
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        Gdx.gl.glClearColor(0.38f, 0.68f, 0.95f, 1f);
+        Gdx.gl.glClearColor(0.35f, 0.55f, 0.75f, 1f);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
-
-        camera.position.set(positions[0], 7f, progress[0] + 13f);
-        camera.lookAt(positions[0], 0f, progress[0] - 15f);
-        camera.update();
-
-        batch.begin(camera);
-        batch.render(ground, environment);
-        batch.render(road, environment);
-
-        for (int i = 0; i < 5; i++) {
-            cars[i].transform.setToTranslation(positions[i], 0.65f, -progress[i]);
-            batch.render(cars[i], environment);
-        }
-        batch.end();
-
-        drawHUD();
+        renderer.update(delta); renderer.render();
     }
 
-    private void updateGame(float delta) {
-        if (finished) return;
-
-        if (leftPressed) {
-            playerLane = Math.max(0, playerLane - 1);
-            leftPressed = false;
-        }
-        if (rightPressed) {
-            playerLane = Math.min(2, playerLane + 1);
-            rightPressed = false;
-        }
-
-        float targetX = (playerLane - 1) * 3.5f;
-        positions[0] = MathUtils.lerp(
-            positions[0], targetX, Math.min(1f, delta * 7f)
-        );
-
-        playerSpeed = MathUtils.lerp(playerSpeed, 24f, delta * 0.5f);
-        progress[0] += playerSpeed * delta;
-
-        for (int i = 1; i < 5; i++) {
-            float variation = MathUtils.sin(progress[i] * 0.025f + i) * 1.5f;
-            positions[i] = MathUtils.clamp(
-                positions[i] + variation * delta, -4.5f, 4.5f
-            );
-
-            botSpeed[i] = 17f + i * 1.1f
-                + MathUtils.sin(progress[i] * 0.03f) * 2f;
-            progress[i] += botSpeed[i] * delta;
-        }
-
-        for (int i = 0; i < 5; i++) {
-            if (progress[i] >= FINISH_DISTANCE) {
-                finished = true;
-                break;
-            }
-        }
+    @Override public void resize(int width, int height) {
+        if (renderer != null) renderer.updateViewport(width, height);
     }
 
-    private int getRank() {
-        int rank = 1;
-        for (int i = 1; i < 5; i++) {
-            if (progress[i] > progress[0]) rank++;
-        }
-        return rank;
-    }
-
-    private void drawHUD() {
-        ui.begin();
-
-        font.getData().setScale(1.5f);
-        font.setColor(Color.WHITE);
-
-        font.draw(ui, "AR RACING", 20f, Gdx.graphics.getHeight() - 25f);
-        font.draw(
-            ui,
-            "SPEED: " + (int)(playerSpeed * 6f) + " KM/H",
-            20f, Gdx.graphics.getHeight() - 65f
-        );
-        font.draw(ui, "RANK: " + getRank() + "/5", 20f, Gdx.graphics.getHeight() - 105f);
-
-        if (finished) {
-            font.draw(
-                ui,
-                "RACE FINISHED!",
-                Gdx.graphics.getWidth() / 2f - 100f,
-                Gdx.graphics.getHeight() / 2f
-            );
-        }
-
-        font.draw(ui, "LEFT", 30f, 60f);
-        font.draw(ui, "RIGHT", Gdx.graphics.getWidth() - 110f, 60f);
-
-        ui.end();
-    }
-
-    @Override
-    public void dispose() {
-        if (batch != null) batch.dispose();
-        if (ui != null) ui.dispose();
-        if (font != null) font.dispose();
-
-        if (roadModel != null) roadModel.dispose();
-        if (groundModel != null) groundModel.dispose();
-
-        for (Model model : carModels) {
-            if (model != null) model.dispose();
-        }
+    @Override public void dispose() {
+        if (renderer != null) renderer.dispose();
+        if (shadowLight != null) shadowLight.dispose();
+        if (trackAsset != null) trackAsset.dispose();
+        if (playerAsset != null) playerAsset.dispose();
+        if (yellowAsset != null) yellowAsset.dispose();
+        if (redAsset != null) redAsset.dispose();
     }
 }
